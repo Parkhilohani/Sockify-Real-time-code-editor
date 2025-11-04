@@ -1,10 +1,25 @@
 import express from "express";
 import http from "http";
+import cors from "cors";
 import { Server } from "socket.io";
 import path from "path";
 import axios from "axios";
+import mongoose from "mongoose";
+import Room from "./models/Room.js";
 
 const app = express();
+app.use(cors());
+app.use(express.json());
+
+//connect to mongodb
+mongoose
+  .connect("mongodb://127.0.0.1:27017/realtimeEditor", {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
+  .then(() => console.log("MongoDB connected"))
+  .catch((err) => console.error("MongoDB connection error:", err));
+
 const server = http.createServer(app);
 
 const io = new Server(server, {
@@ -17,13 +32,51 @@ const io = new Server(server, {
 //keep track of room members
 const rooms = new Map();
 
+// Create a new room
+app.post("/api/rooms/create", async (req, res) => {
+  try {
+    const { roomId, userName } = req.body;
+    const room = new Room({
+      roomId,
+      users: [userName],
+    });
+    await room.save();
+    res.status(201).json({ success: true, room });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Join existing room
+app.post("/api/rooms/join", async (req, res) => {
+  try {
+    const { roomId, userName } = req.body;
+    const room = await Room.findOne({ roomId });
+
+    if (!room) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Room not found" });
+    }
+
+    if (!room.users.includes(userName)) {
+      room.users.push(userName);
+      await room.save();
+    }
+
+    res.json({ success: true, room });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 io.on("connection", (socket) => {
   console.log("User Connected", socket.id);
 
   let currentRoom = null;
   let currentUser = null;
 
-  socket.on("join", ({ roomId, userName }) => {
+  socket.on("join", async ({ roomId, userName }) => {
     // Leave previous room if any
     if (currentRoom) {
       socket.leave(currentRoom);
@@ -49,7 +102,18 @@ io.on("connection", (socket) => {
 
     rooms.get(roomId).users.add(userName);
 
-    // Send current code to newly joined user
+    // //fetch code from MongoDb if available
+    const dbRoom = await Room.findOne({ roomId });
+
+    if (dbRoom) {
+      // Update session memory with latest code
+      rooms.get(roomId).code = dbRoom.code;
+
+      // Send all saved codes to frontend
+      socket.emit("loadSavedCodes", dbRoom.savedCodes);
+    }
+
+    // send current code to new user
     socket.emit("codeUpdate", rooms.get(roomId).code);
 
     // Broadcast updated users list
@@ -59,9 +123,12 @@ io.on("connection", (socket) => {
     );
   });
 
-  socket.on("codeChange", ({ roomId, code }) => {
+  socket.on("codeChange", async ({ roomId, code }) => {
     if (rooms.has(roomId)) {
       rooms.get(roomId).code = code;
+
+      //automatically save
+      await Room.updateOne({ roomId }, { code }, { upsert: true });
     }
     socket.to(roomId).emit("codeUpdate", code);
   });
@@ -119,6 +186,45 @@ io.on("connection", (socket) => {
     }
   );
 
+  socket.on("saveCode", async ({ roomId, code, userName, fileName }) => {
+    try {
+      const dbRoom = await Room.findOne({ roomId });
+
+      if (!dbRoom) {
+        socket.emit("codeSaved", { success: false, message: "Room not found" });
+        return;
+      }
+
+      // Save current code in session memory
+      if (rooms.has(roomId)) {
+        rooms.get(roomId).code = code;
+      }
+
+      // Push new saved version
+      dbRoom.savedCodes.push({
+        fileName: fileName || `untitled-${Date.now()}`,
+        code,
+        savedBy: userName || "Unknown User",
+        savedAt: new Date(),
+      });
+
+      // Update latest code
+      dbRoom.code = code;
+      await dbRoom.save();
+
+      socket.emit("codeSaved", {
+        success: true,
+        message: "Code saved successfully!",
+      });
+
+      // Update saved code list in frontend sidebar
+      io.to(roomId).emit("loadSavedCodes", dbRoom.savedCodes);
+    } catch (err) {
+      console.error("Error saving code:", err);
+      socket.emit("codeSaved", { success: false, message: err.message });
+    }
+  });
+
   socket.on("disconnect", () => {
     if (currentRoom && currentUser) {
       const room = rooms.get(currentRoom);
@@ -133,6 +239,25 @@ io.on("connection", (socket) => {
     console.log("User Disconnected:", socket.id);
   });
 });
+
+// server.on('saveCode', async ({ roomId, code}) => {
+//   try{
+//     // upade in memory
+//     if(rooms.has(roomId)){
+//       rooms.get(roomId).code = code;
+//     }
+//     // save to mongodb
+//     await Room.updateOne(
+//       { roomId },
+//       { code, lastUpdated: new Date() },
+//       { upsert: true }
+//     );
+//     socket.emit("codeSaved", { success: true, message: " Code save Successfully"});
+//   }catch(err){
+//     console.log("Eroorr saving the code", err);
+//     socket.emit("codeSaved", { success: false, message: "Error saving code"});
+//   }
+// });
 
 const port = process.env.PORT || 5001;
 server.listen(port, () => {

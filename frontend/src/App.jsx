@@ -7,7 +7,6 @@ import "monaco-editor/esm/vs/basic-languages/java/java.contribution";
 import "monaco-editor/esm/vs/basic-languages/html/html.contribution";
 import "monaco-editor/esm/vs/basic-languages/css/css.contribution";
 import { useLocation } from "react-router-dom";
-// import HTMLEditor from "./components/HTMLEditor";
 
 const socket = io("http://localhost:5001");
 
@@ -23,36 +22,46 @@ export default function App() {
   const [outPut, setOutPut] = useState("");
   const [version, setVersion] = useState("*");
   const location = useLocation();
+  const [savedCodes, setSavedCodes] = useState([]);
+  const [showPopup, setShowPopup] = useState(false);
+  const [fileName, setFileName] = useState("");
 
   //components mounts and gets data from Home.js
   useEffect(() => {
-    if(location.state){
-        const{ roomId, userName } = location.state;
-        setRoomId(roomId);
-        setUserName(userName);
-        socket.emit("join",{ roomId, userName });
-        setJoined(true);
+    const savedName = localStorage.getItem("userName");
+    const savedRoom = localStorage.getItem("roomId");
+    if (savedName && savedRoom && !joined) {
+      setUserName(savedName);
+      setRoomId(savedRoom);
+      socket.emit("join", { roomId: savedRoom, userName: savedName });
+      setJoined(true);
     }
-  },[location.state]);
+  }, []);
+
+  //handle navigation from home.jsx
+  useEffect(() => {
+    if (location.state) {
+      const { roomId, userName } = location.state;
+      setRoomId(roomId);
+      setUserName(userName);
+      socket.emit("join", { roomId, userName });
+      localStorage.setItem("userName", userName);
+      localStorage.setItem("roomId", roomId);
+      setJoined(true);
+    }
+  }, [location.state]);
 
   //listen to update from server
   useEffect(() => {
-    socket.on("userJoined", (users) => {
-      console.log("user recieved:", users);
-      setUsers(users);
-    });
+    socket.on("userJoined", (users) => setUsers(users));
     socket.on("codeUpdate", (newCode) => setCode(newCode));
-
     socket.on("userTyping", (userName) => {
       setTyping(`${userName.slice(0, 8)}... is typing`);
       setTimeout(() => setTyping(""), 2000);
     });
-
     socket.on("languageUpdate", (newLanguage) => setLanguage(newLanguage));
-
-    socket.on("codeResponse", (response) => {
-      setOutPut(response.run.output);
-    });
+    socket.on("codeResponse", (response) => setOutPut(response.run.output));
+    socket.on("loadSavedCodes", (codes) => setSavedCodes(codes));
 
     return () => {
       socket.off("userJoined");
@@ -60,22 +69,24 @@ export default function App() {
       socket.off("userTyping");
       socket.off("languageUpdate");
       socket.off("codeResponse");
+      socket.off("loadSavedCodes");
     };
   }, [roomId, userName]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
-      socket.emit("leaveRoom");
+      socket.emit("leaveRoom",{roomId, userName});
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
-
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, []);
+  }, [roomId, userName]);
 
   const leaveRoom = () => {
     socket.emit("leaveRoom", { roomId, userName });
+    localStorage.removeItem("userName");
+    localStorage.removeItem("roomId");
     setJoined(false);
     setRoomId("");
     setUserName("");
@@ -106,37 +117,116 @@ export default function App() {
     socket.emit("compileCode", { code, roomId, language, version });
   };
 
-  // if(!joined){
-  //   return <div className="join-container">Joining room...</div>
-  // }
+  const exportCode = () => {
+    const blob = new Blob([code], { type: "text/plain" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+
+    // Detect file extension based on selected language
+    let extension = "txt";
+    switch (language) {
+      case "javascript":
+        extension = "js";
+        break;
+      case "python":
+        extension = "py";
+        break;
+      case "java":
+        extension = "java";
+        break;
+      case "cpp":
+        extension = "cpp";
+        break;
+      case "html":
+        extension = "html";
+        break;
+      case "css":
+        extension = "css";
+        break;
+    }
+
+    link.download = `spacely_code.${extension}`;
+    link.click();
+  };
+
+  //save code 
+  const saveCodeToDB = () => {
+    if (!roomId) {
+      alert("Please join a room first!");
+      return;
+    }
+    setShowPopup(true); 
+  };
+
+  const confirmSave = () => {
+    if (!fileName.trim()) {
+      alert("Please enter a file name!");
+      return;
+    }
+
+    const storedUser = userName || localStorage.getItem("userName"); 
+    if (!storedUser) {
+      console.log("Saving with:", {
+        roomId,
+        code,
+        userName: storedUser,
+        fileName,
+      });
+      alert("User not found. Please rejoin the room.");
+      return;
+    }
+
+    socket.emit("saveCode", { roomId, code, userName: storedUser, fileName , userName});
+    setShowPopup(false);
+    setFileName("");
+
+    socket.off("codeSaved");
+    socket.on("codeSaved", (data) => {
+      if (data.success) {
+        alert("Code saved successfully!");
+        socket.emit("getSavedCodes", { roomId });
+      } else {
+        alert("Failed to save code: " + (data.message || "Unknown error"));
+      }
+    });
+  };
 
   if (!joined) {
-  return (
-    <div className="join-container">
-      <h2>Join a Room</h2>
-      <input
-        type="text"
-        placeholder="Enter Room ID"
-        value={roomId}
-        onChange={(e) => setRoomId(e.target.value)}
-      />
-      <input
-        type="text"
-        placeholder="Enter Your Name"
-        value={userName}
-        onChange={(e) => setUserName(e.target.value)}
-      />
-      <button onClick={() => {
-        if (roomId && userName) {
-          socket.emit("join", { roomId, userName });
-          setJoined(true);
-        }
-      }}>
-        Join Room
-      </button>
-    </div>
-  );
-}
+    return (
+      <div className="join-container">
+        <h2>Join a Room</h2>
+        <input
+          type="text"
+          placeholder="Enter Room ID"
+          value={roomId}
+          onChange={(e) => setRoomId(e.target.value)}
+        />
+        <input
+          type="text"
+          placeholder="Enter Your Name"
+          value={userName}
+          onChange={(e) => setUserName(e.target.value)}
+        />
+        <button
+          onClick={() => {
+            if (roomId && userName) {
+              // socket.emit("join", { roomId, userName });
+              // setJoined(true);
+              socket.emit("join", { roomId, userName });
+              localStorage.setItem("userName", userName); // ✅ Save to localStorage
+              localStorage.setItem("roomId", roomId);
+              setJoined(true);
+            } else {
+              alert("Please enter both Room ID and Name");
+            }
+          }}
+        >
+          Join Room
+        </button>
+      </div>
+    );
+  }
+
 
 
   return (
@@ -151,15 +241,16 @@ export default function App() {
         </div>
         <h3>Users in Room:</h3>
         <ul>
-          {users.map((user, index) => (
-            // <li key={index}>{user.slice(0, 8)}</li>
-            <li key={index}>
-                {/* {typeof user === "string"
-                ? user.slice(0, 8)
-                : user?.username?.slice(0, 8) || "Unkown"} */}
-                {user.username ? user.username.slice(0, 8) : "Unknown"}
-            </li>
-          ))}
+          {users &&
+            users.map((user, index) => (
+              <li key={index}>
+                {typeof user === "string"
+                  ? user.slice(0, 8)
+                  : user?.username
+                  ? user.username.slice(0, 8)
+                  : "Unknown"}
+              </li>
+            ))}
         </ul>
         <p className="typing-indicator">{typing}</p>
         {/* to chng environment */}
@@ -178,6 +269,27 @@ export default function App() {
         <button className="leave-button" onClick={leaveRoom}>
           Leave Room
         </button>
+        <div className="saved-codes-panel">
+          <h3>Saved Codes</h3>
+          <ul>
+            {savedCodes.map((item, index) => (
+              <li key={index}>
+                <div>
+                  <strong>{item.savedBy}</strong> - <em>{item.fileName}</em>
+                  {/* {new Date(item.savedAt).toLocaleString()} */}
+                </div>
+                <button
+                  onClick={() => {
+                    setCode(item.code);
+                    socket.emit("codeChange", { roomId, code: item.code });
+                  }}
+                >
+                  Get code
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
 
       <div className="editor-wrapper">
@@ -192,9 +304,20 @@ export default function App() {
             fontSize: 14,
           }}
         />
-        <button className="run-btn" onClick={runCode}>
+        {/* <button className="run-btn" onClick={runCode}>
           Execute
-        </button>
+        </button> */}
+        <div className="button-row">
+          <button className="run-btn" onClick={runCode}>
+            Execute
+          </button>
+          <button className="save-btn" onClick={saveCodeToDB}>
+            Save
+          </button>
+          <button className="export-btn" onClick={exportCode}>
+            Export
+          </button>
+        </div>
         <textarea
           className="output-console"
           value={outPut}
@@ -202,6 +325,30 @@ export default function App() {
           placeholder="Output ..."
         />
       </div>
+      {showPopup && (
+        <div className="popup-overlay">
+          <div className="popup-box">
+            <h3>Save Code As...</h3>
+            <input
+              type="text"
+              placeholder="Enter file name"
+              value={fileName}
+              onChange={(e) => setFileName(e.target.value)}
+            />
+            <div className="popup-buttons">
+              <button
+                onClick={() => setShowPopup(false)}
+                className="cancel-btn"
+              >
+                Cancel
+              </button>
+              <button onClick={confirmSave} className="confirm-btn">
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

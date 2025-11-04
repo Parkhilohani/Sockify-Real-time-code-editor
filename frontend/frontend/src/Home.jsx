@@ -1,82 +1,56 @@
-import React, { useState } from "react";
+//Import React and React hooks for state management and navigation
+import React, { use, useState } from "react";
 import { useNavigate } from "react-router-dom"; 
 import "./Home.css";
 
-//Generates a unique 7-digit room ID when "Create Room" is clicked
+//Utility function: Generates a unique 7-digit room ID when "Create Room" is clicked
 const generateRoomId = () => {
   return Math.floor(1000000 + Math.random() * 9000000).toString();
 };
 
 function Home() {
+  //Local state to store the username and room ID
+  // const [userName, setUserName] = useState("");
   const [createName, setCreateName] = useState("");
   const [joinName, setJoinName] = useState("");
   const [roomId, setRoomId] = useState("");
   const navigate = useNavigate();
 
   //Triggered when user clicks "Create New Room"
-  const handleCreateRoom = async () => {
+  const handleCreateRoom = () => {
+    // show an alert
     if (!createName.trim()) {
       alert("Please enter your name.");
       return;
     }
 
+    // Generate a new 7-digit unique room ID
     const newRoomId = generateRoomId();
 
-    try {
-      //Call backend API to create room
-      const response = await fetch("http://localhost:5001/api/rooms/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomId: newRoomId, userName: createName }),
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        navigate("/editor", {
-          state: {
-            roomId: newRoomId,
-            userName: createName,
-          },
-        });
-      } else {
-        alert("Error creating room: " + data.error);
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Server error while creating room.");
-    }
+    // Navigate to the Editor page and pass both userName and newRoomId via state
+    navigate("/editor", {
+      state: {
+        roomId: newRoomId,
+        userName: createName,
+      },
+    });
   };
 
-  //when user wants to join an already existing room
-  const handleJoinRoom = async () => {
+  //Triggered when user wants to join an already existing room
+  const handleJoinRoom = () => {
+    //show an alert
     if (!joinName.trim() || !roomId.trim()) {
       alert("Please enter both Room ID and your name.");
       return;
     }
 
-    try {
-      //Call backend API to join room
-      const response = await fetch("http://localhost:5001/api/rooms/join", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomId, userName: joinName }),
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        navigate("/editor", {
-          state: {
-            roomId,
-            userName: joinName,
-          },
-        });
-      } else {
-        alert("Error joining room: " + data.message);
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Server error while joining room.");
-    }
+    // Navigate to the Editor page with existing roomId and userName
+    navigate("/editor", {
+      state: {
+        roomId,
+        userName: joinName,
+      },
+    });
   };
 
   return (
@@ -122,5 +96,3 @@ function Home() {
 }
 
 export default Home;
-
-

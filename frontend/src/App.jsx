@@ -6,7 +6,7 @@ import "monaco-editor/esm/vs/basic-languages/python/python.contribution";
 import "monaco-editor/esm/vs/basic-languages/java/java.contribution";
 import "monaco-editor/esm/vs/basic-languages/html/html.contribution";
 import "monaco-editor/esm/vs/basic-languages/css/css.contribution";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 const socket = io("http://localhost:5001");
 
@@ -25,6 +25,8 @@ export default function App() {
   const [savedCodes, setSavedCodes] = useState([]);
   const [showPopup, setShowPopup] = useState(false);
   const [fileName, setFileName] = useState("");
+  
+  const navigate = useNavigate();
 
   //components mounts and gets data from Home.js
   useEffect(() => {
@@ -93,6 +95,7 @@ export default function App() {
     setCode("");
     setLanguage("javascript");
     setUsers([]);
+    navigate("/");
   };
 
   const copyRoomId = () => {
@@ -136,12 +139,6 @@ export default function App() {
         break;
       case "cpp":
         extension = "cpp";
-        break;
-      case "html":
-        extension = "html";
-        break;
-      case "css":
-        extension = "css";
         break;
     }
 
@@ -213,7 +210,7 @@ export default function App() {
               // socket.emit("join", { roomId, userName });
               // setJoined(true);
               socket.emit("join", { roomId, userName });
-              localStorage.setItem("userName", userName); // ✅ Save to localStorage
+              localStorage.setItem("userName", userName); //Save to localStorage
               localStorage.setItem("roomId", roomId);
               setJoined(true);
             } else {
@@ -263,8 +260,6 @@ export default function App() {
           <option value="python">Python</option>
           <option value="java">Java</option>
           <option value="cpp">C++</option>
-          <option value="html">HTML</option>
-          <option value="css">CSS</option>
         </select>
         <button className="leave-button" onClick={leaveRoom}>
           Leave Room

@@ -70,194 +70,6 @@ app.post("/api/rooms/join", async (req, res) => {
   }
 });
 
-// io.on("connection", (socket) => {
-//   console.log("User Connected", socket.id);
-
-//   let currentRoom = null;
-//   let currentUser = null;
-
-//   socket.on("join", async ({ roomId, userName }) => {
-//     // Leave previous room if any
-//     if (currentRoom) {
-//       socket.leave(currentRoom);
-//       const room = rooms.get(currentRoom);
-//       if (room) {
-//         room.users.delete(currentUser);
-//         io.to(currentRoom).emit(
-//           "userJoined",
-//           Array.from(room.users).map((username) => ({ username }))
-//         );
-//       }
-//     }
-
-//     currentRoom = roomId;
-//     currentUser = userName;
-
-//     socket.join(roomId);
-
-//     // Create room if it doesn't exist
-//     if (!rooms.has(roomId)) {
-//       rooms.set(roomId, { users: new Set(), code: "// start code here" });
-//     }
-
-//     rooms.get(roomId).users.add(userName);
-
-//     // //fetch code from MongoDb if available
-//     const dbRoom = await Room.findOne({ roomId });
-
-//     if (dbRoom) {
-//       // Update session memory with latest code
-//       rooms.get(roomId).code = dbRoom.code;
-
-//       // Send all saved codes to frontend
-//       socket.emit("loadSavedCodes", dbRoom.savedCodes);
-//     }
-
-//     // send current code to new user
-//     socket.emit("codeUpdate", rooms.get(roomId).code);
-
-//     // Broadcast updated users list
-//     io.to(roomId).emit(
-//       "userJoined",
-//       Array.from(rooms.get(roomId).users).map((username) => ({ username }))
-//     );
-//   });
-
-//   socket.on("codeChange", async ({ roomId, code }) => {
-//     if (rooms.has(roomId)) {
-//       rooms.get(roomId).code = code;
-
-//       //automatically save
-//       await Room.updateOne({ roomId }, { code }, { upsert: true });
-//     }
-//     socket.to(roomId).emit("codeUpdate", code);
-//   });
-
-//   socket.on("leaveRoom", () => {
-//     if (currentRoom && currentUser) {
-//       const room = rooms.get(currentRoom);
-//       if (room) {
-//         room.users.delete(currentUser);
-//         io.to(currentRoom).emit(
-//           "userJoined",
-//           Array.from(room.users).map((username) => ({ username }))
-//         );
-//       }
-
-//       socket.leave(currentRoom);
-
-//       currentRoom = null;
-//       currentUser = null;
-//     }
-//   });
-
-//   socket.on("typing", ({ roomId, userName }) => {
-//     socket.to(roomId).emit("userTyping", userName);
-//   });
-
-//   socket.on("languageChange", ({ roomId, language }) => {
-//     io.to(roomId).emit("languageUpdate", language);
-//   });
-
-//   socket.on(
-//     "compileCode",
-//     async ({ code, roomId, language, version, input }) => {
-//       if (rooms.has(roomId)) {
-//         const room = rooms.get(roomId);
-//         try {
-//           const response = await axios.post(
-//             "https://emkc.org/api/v2/piston/execute",
-//             {
-//               language,
-//               version,
-//               files: [{ content: code }],
-//               stdin: input,
-//             }
-//           );
-//           room.output = response.data.run.output;
-//           io.to(roomId).emit("codeResponse", response.data);
-//         } catch (error) {
-//           console.error("Compilation error:", error.message);
-//           io.to(roomId).emit("codeResponse", {
-//             run: { output: "Error during compilation" },
-//           });
-//         }
-//       }
-//     }
-//   );
-
-//   socket.on("saveCode", async ({ roomId, code, userName, fileName }) => {
-//     try {
-//       const dbRoom = await Room.findOne({ roomId });
-
-//       if (!dbRoom) {
-//         socket.emit("codeSaved", { success: false, message: "Room not found" });
-//         return;
-//       }
-
-//       // Save current code in session memory
-//       if (rooms.has(roomId)) {
-//         rooms.get(roomId).code = code;
-//       }
-
-//       // Push new saved version
-//       dbRoom.savedCodes.push({
-//         fileName: fileName || `untitled-${Date.now()}`,
-//         code,
-//         savedBy: userName || "Unknown User",
-//         savedAt: new Date(),
-//       });
-
-//       // Update latest code
-//       dbRoom.code = code;
-//       await dbRoom.save();
-
-//       socket.emit("codeSaved", {
-//         success: true,
-//         message: "Code saved successfully!",
-//       });
-
-//       // Update saved code list in frontend sidebar
-//       io.to(roomId).emit("loadSavedCodes", dbRoom.savedCodes);
-//     } catch (err) {
-//       console.error("Error saving code:", err);
-//       socket.emit("codeSaved", { success: false, message: err.message });
-//     }
-//   });
-
-//   socket.on("disconnect", () => {
-//     if (currentRoom && currentUser) {
-//       const room = rooms.get(currentRoom);
-//       if (room) {
-//         room.users.delete(currentUser);
-//         io.to(currentRoom).emit(
-//           "userJoined",
-//           Array.from(room.users).map((username) => ({ username }))
-//         );
-//       }
-//     }
-//     console.log("User Disconnected:", socket.id);
-//   });
-// });
-
-// server.on('saveCode', async ({ roomId, code}) => {
-//   try{
-//     // upade in memory
-//     if(rooms.has(roomId)){
-//       rooms.get(roomId).code = code;
-//     }
-//     // save to mongodb
-//     await Room.updateOne(
-//       { roomId },
-//       { code, lastUpdated: new Date() },
-//       { upsert: true }
-//     );
-//     socket.emit("codeSaved", { success: true, message: " Code save Successfully"});
-//   }catch(err){
-//     console.log("Eroorr saving the code", err);
-//     socket.emit("codeSaved", { success: false, message: "Error saving code"});
-//   }
-// });
 
 io.on("connection", (socket) => {
   console.log("User Connected", socket.id);
@@ -275,7 +87,7 @@ io.on("connection", (socket) => {
 
     const room = rooms.get(roomId);
 
-    // ✅ Add or update this user’s socket ID
+    //Add or update this user’s socket ID
     room.users.set(userName, socket.id);
 
     // Fetch from DB if available
@@ -314,7 +126,7 @@ io.on("connection", (socket) => {
 
     const room = rooms.get(roomId);
 
-    // ✅ Check if user has another active socket (after refresh)
+    //Check if user has another active socket (after refresh)
     const stillConnected = Array.from(io.sockets.sockets.values()).some(
       (s) => s.data?.userName === userName && s.data?.roomId === roomId
     );
